@@ -5,6 +5,7 @@ class LoraInfo(BaseModel):
     name: str
     urn: str
     url: str
+    strength: float = Field(default=1.0)
     trigger_words: List[str] = Field(default_factory=list)
 
 class FluxTask(BaseModel):
@@ -15,7 +16,7 @@ class FluxTask(BaseModel):
     lora: Optional[LoraInfo] = None
 
 class FluxConfig(BaseModel):
-    num_inference_steps: int = Field(default=50, ge=1, le=150)
+    num_inference_steps: int = Field(default=28, ge=1, le=150)
     guidance_scale: float = Field(default=3.5, ge=1.0, le=20.0)
     height: int = Field(default=1024)
     width: int = Field(default=1024)

@@ -1,6 +1,8 @@
 import logging
 import sys
 import os
+import json
+
 
 # Ensure the framework is in the python path if needed (for local tests)
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../ai-pipeline-toolbox-repo/src')))
@@ -18,31 +20,18 @@ from flux_hf_pipeline.pipeline import Flux1DPipeline
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def main():
-    raw_workload = {
-      "groups": [
-        {
-          "group_name": "01_fantasy_autumn_cat",
-          "lora": {
-            "name": "style_filter_xu_er_thick_paint",
-            "urn": "urn:air:flux1:lora:civitai:768917@1138415",
-            "url": "https://civitai.com/models/768917/style-filter-xu-er-thick-paint-composition-light-texture-enhancement?modelVersionId=1138415",
-            "trigger_words": [
-                "XUER guangying"
-            ]
-        },
-          "prompts": [
-            {
-              "name": "01_01_fluffy_tabby_lantern",
-              "pos": "An ultra-detailed dark fantasy digital painting of a majestic, fluffy orange tabby cat next to a bronze lantern"
-            },
-            {
-              "name": "01_02_special_cyber_cat",
-              "pos": "An ultra-detailed cyberpunk style cat"
-            }
-          ]
-        }
-      ]
-    }
+    if len(sys.argv) < 2:
+        logging.error("Usage: python -m flux_hf_pipeline.main <path_to_workload.json>")
+        sys.exit(1)
+
+    workload_path = sys.argv[1]
+    if not os.path.exists(workload_path):
+        logging.error(f"Workload file not found: {workload_path}")
+        sys.exit(1)
+
+    with open(workload_path, "r", encoding="utf-8") as f:
+        raw_workload = json.load(f)
+
     
     # Initialize framework components
     runner = Runner(
@@ -53,8 +42,8 @@ def main():
         result_saver=ImageGroupResultSaver("data/outputs")
     )
     
-    # Run with 20 steps for faster execution
-    config = FluxConfig(num_inference_steps=20, guidance_scale=3.5)
+
+    config = FluxConfig(num_inference_steps=28, guidance_scale=3.5)
 
     pipeline = Flux1DPipeline()
     

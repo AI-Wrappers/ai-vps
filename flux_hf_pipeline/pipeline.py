@@ -62,7 +62,7 @@ class Flux1DPipeline(BaseGenerationPipeline[FluxConfig, FluxTask, Image.Image]):
                 self.active_lora_urn = workload.lora.urn
                 
             if workload.lora.trigger_words:
-                prompt = f"{prompt}, " + ", ".join(workload.lora.trigger_words)
+                prompt = f"{prompt}, ".join(workload.lora.trigger_words)
         else:
             if self.active_lora_urn is not None:
                 self.pipe.unload_lora_weights()
