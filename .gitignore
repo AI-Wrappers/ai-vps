@@ -1,0 +1,14 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+ai-pipeline-toolbox-repo/
+briia-rmbg2.md
+flux1D.md
