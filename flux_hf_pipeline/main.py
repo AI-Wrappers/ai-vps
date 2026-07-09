@@ -32,12 +32,17 @@ def main():
     with open(workload_path, "r", encoding="utf-8") as f:
         raw_workload = json.load(f)
 
-    
+    hf_token = os.getenv("HF_TOKEN")
+    civitai_token = os.getenv("CIVITAI_API_KEY")
+
+    # Ensure data directory exists
+    os.makedirs("data", exist_ok=True)
+
     # Initialize framework components
     runner = Runner(
         workload_processor=GroupedWorkloadProcessor(),
         state_manager=SQLiteStateManager("data/state.db"),
-        fetcher=ModelFetcher("data/models_cache"),
+        fetcher=ModelFetcher("data/models_cache", hf_token=hf_token, civitai_token=civitai_token),
         loop_manager=LoopManager(),
         result_saver=ImageGroupResultSaver("data/outputs")
     )
