@@ -15,18 +15,25 @@ from flux_hf_pipeline.saver import ImageGroupResultSaver
 from flux_hf_pipeline.pipeline import Flux1DPipeline
 
 @patch('flux_hf_pipeline.pipeline.FluxPipeline')
-@patch('ai_pipeline_toolbox.components.model_fetcher.ModelFetcher.fetch')
-def test_flux_pipeline_flow(mock_fetch, mock_flux_pipeline, tmp_path):
+@patch('diffusers.FluxTransformer2DModel')
+@patch('diffusers.AutoencoderKL')
+@patch('transformers.CLIPTextModel')
+@patch('transformers.T5EncoderModel')
+@patch('safetensors.torch.load_file')
+def test_flux_pipeline_flow(mock_load_file, mock_t5, mock_clip, mock_vae, mock_transformer, mock_flux_pipeline, tmp_path):
     # 1. Mock the heavy dependencies
-    # Mock fetch to return a dummy dictionary of paths
     def mock_fetch_func(models):
-        return {m: "/dummy/path/lora.safetensors" for m in models}
-    mock_fetch.side_effect = mock_fetch_func
+        return {m: "/dummy/path/model.safetensors" for m in models}
+    
+    mock_fetcher = MagicMock(spec=ModelFetcher)
+    mock_fetcher.fetch.side_effect = mock_fetch_func
+    
+    # Mock load_file to return dummy dict
+    mock_load_file.return_value = {}
     
     # Mock the pipeline HF model
     mock_pipe_instance = MagicMock()
     dummy_image = Image.new('RGB', (64, 64), color='blue')
-    # pipeline __call__ returns an object with an 'images' attribute
     mock_output = MagicMock()
     mock_output.images = [dummy_image]
     mock_pipe_instance.return_value = mock_output
@@ -54,13 +61,12 @@ def test_flux_pipeline_flow(mock_fetch, mock_flux_pipeline, tmp_path):
 
     # 3. Setup temporary directories for outputs and state
     db_path = tmp_path / "state.db"
-    models_dir = tmp_path / "models"
     outputs_dir = tmp_path / "outputs"
 
     runner = Runner(
         workload_processor=GroupedWorkloadProcessor(),
         state_manager=SQLiteStateManager(str(db_path)),
-        fetcher=ModelFetcher(str(models_dir)),
+        fetcher=mock_fetcher,
         loop_manager=LoopManager(),
         result_saver=ImageGroupResultSaver(str(outputs_dir))
     )
@@ -69,23 +75,18 @@ def test_flux_pipeline_flow(mock_fetch, mock_flux_pipeline, tmp_path):
     pipeline = Flux1DPipeline()
     
     # 4. Execute the orchestrator
-    runner.run(pipeline=pipeline, raw_workload=raw_workload, config=config)
+    with patch('torchao.quantization.quantize_') as mock_quantize:
+        runner.run(pipeline=pipeline, raw_workload=raw_workload, config=config)
     
     # 5. Assertions
-    # Check that model.from_pretrained was called
     mock_flux_pipeline.from_pretrained.assert_called_once()
-    
-    # Check that the pipeline actually generated the image
     mock_pipe_instance.assert_called_once()
     
-    # Check that the result saver created the correct file structure
-    # Based on our logic: outputs/test_group/test_prompt_1.png and .json
     expected_image = outputs_dir / "test_group" / "test_prompt_1.png"
     expected_meta = outputs_dir / "test_group" / "test_prompt_1.json"
     
     assert expected_image.exists(), "Image was not saved in the correct group directory"
     assert expected_meta.exists(), "Metadata JSON was not saved"
     
-    # Verify state manager recorded the completion
     state_mgr = SQLiteStateManager(str(db_path))
     assert state_mgr.is_completed("test_group___test_prompt_1") == True
