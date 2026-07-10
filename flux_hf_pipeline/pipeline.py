@@ -20,10 +20,18 @@ class Flux1DPipeline(BaseGenerationPipeline[FluxConfig, FluxTask, Image.Image]):
     def setup(self, models_paths: Dict[Union[Enum, str, DynamicModel], str]) -> None:
         logger.info("Initializing Flux Pipeline via HF SDK...")
         self.pipe = FluxPipeline.from_pretrained("black-forest-labs/FLUX.1-dev", torch_dtype=torch.bfloat16)
-        self.pipe.enable_model_cpu_offload()
+        
+        # Offload text encoders to CPU immediately to avoid VRAM overload on startup
+        self.pipe.text_encoder = self.pipe.text_encoder.to("cpu")
+        self.pipe.text_encoder_2 = self.pipe.text_encoder_2.to("cpu")
+        
+        # Move only Transformer and VAE to GPU
+        self.pipe.transformer = self.pipe.transformer.to("cuda")
+        self.pipe.vae = self.pipe.vae.to("cuda")
         
         self.models_paths = models_paths
         self.active_lora_urn = None
+        self.embeddings_cache = {}
         logger.info("Pipeline initialization complete.")
         
     def get_dynamic_models(self, workload: FluxTask) -> List[DynamicModel]:
@@ -68,15 +76,47 @@ class Flux1DPipeline(BaseGenerationPipeline[FluxConfig, FluxTask, Image.Image]):
                 self.pipe.unload_lora_weights()
                 self.active_lora_urn = None
                 
-        logger.info(f"Generating image for prompt: {prompt}")
+        # Check prompt embeddings cache
+        if prompt not in self.embeddings_cache:
+            logger.info(f"Cache miss for prompt: '{prompt}'. Encoding text on GPU...")
+            # Move text encoders to GPU for fast execution
+            self.pipe.text_encoder = self.pipe.text_encoder.to("cuda")
+            self.pipe.text_encoder_2 = self.pipe.text_encoder_2.to("cuda")
+            
+            with torch.no_grad():
+                outputs = self.pipe.encode_prompt(prompt=prompt, device="cuda")
+                if isinstance(outputs, tuple) and len(outputs) >= 2:
+                    prompt_embeds = outputs[0]
+                    pooled_prompt_embeds = outputs[1]
+                else:
+                    prompt_embeds = outputs
+                    pooled_prompt_embeds = outputs
+                    
+            # Save to CPU RAM cache
+            self.embeddings_cache[prompt] = (prompt_embeds.to("cpu"), pooled_prompt_embeds.to("cpu"))
+            
+            # Offload text encoders back to CPU to free VRAM
+            self.pipe.text_encoder = self.pipe.text_encoder.to("cpu")
+            self.pipe.text_encoder_2 = self.pipe.text_encoder_2.to("cpu")
+            torch.cuda.empty_cache()
+        else:
+            logger.info(f"Cache hit for prompt: '{prompt}'. Using cached embeddings.")
+            
+        # Move embeddings to GPU device
+        cached_prompt_embeds, cached_pooled_prompt_embeds = self.embeddings_cache[prompt]
+        prompt_embeds = cached_prompt_embeds.to("cuda")
+        pooled_prompt_embeds = cached_pooled_prompt_embeds.to("cuda")
+                
+        logger.info(f"Generating image using cached/loaded embeddings...")
         image = self.pipe(
-            prompt,
+            prompt_embeds=prompt_embeds,
+            pooled_prompt_embeds=pooled_prompt_embeds,
             height=config.height,
             width=config.width,
             guidance_scale=config.guidance_scale,
             num_inference_steps=config.num_inference_steps,
             max_sequence_length=config.max_sequence_length,
-            generator=torch.Generator("cpu").manual_seed(config.seed)
+            generator=torch.Generator("cuda").manual_seed(config.seed)
         ).images[0]
         
         return image
