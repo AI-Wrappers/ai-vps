@@ -10,7 +10,9 @@ from torchvision.transforms import functional as TF
 from transformers import AutoConfig, AutoModelForImageSegmentation
 from safetensors.torch import load_file
 
-from diffusers import StableDiffusionControlNetPipeline, ControlNetModel, AutoencoderKL
+from diffusers import StableDiffusionControlNetPipeline, AutoencoderKL
+
+from upscale_rmbg_pipeline.ccsr_utils import load_ccsr_controlnet, CCSRUpscaler
 
 from ai_pipeline_toolbox.core.pipeline import BaseGenerationPipeline
 from ai_pipeline_toolbox.registry.generated_enums import Checkpoints, Controlnet, Vae, RmbgModels
@@ -119,34 +121,49 @@ class BgRemovalUpscalePipeline(BaseGenerationPipeline[PipelineConfig, BatchTask,
         logger.info(f"Loading RMBG-2.0 weights from {rmbg_path}...")
         # AutoModelForImageSegmentation expects BriaAI custom architecture definition
         config = AutoConfig.from_pretrained("briaai/RMBG-2.0", trust_remote_code=True)
-        self.rmbg = AutoModelForImageSegmentation.from_pretrained(
-            "briaai/RMBG-2.0",
-            state_dict=load_file(rmbg_path),
-            config=config,
+        self.rmbg = AutoModelForImageSegmentation.from_config(
+            config,
             trust_remote_code=True,
         )
-        self.rmbg.to(self.device).to(torch.bfloat16).eval()
+        self.rmbg.load_state_dict(load_file(rmbg_path))
+        self.rmbg.to(self.device).eval()
 
         # 2. Load CCSR ControlNet
         cn_path = models_paths[Controlnet.CCSR_V2_UPSCALER_CONTROLNET]
         logger.info(f"Loading CCSR ControlNet from {cn_path}...")
-        controlnet = ControlNetModel.from_single_file(
-            cn_path, torch_dtype=torch.bfloat16
-        )
+        controlnet = load_ccsr_controlnet(cn_path, dtype=torch.bfloat16)
 
         # 3. Load CCSR VAE
         vae_path = models_paths[Vae.CCSR_V2_UPSCALER_VAE]
         logger.info(f"Loading CCSR VAE from {vae_path}...")
-        vae = AutoencoderKL.from_single_file(vae_path, torch_dtype=torch.bfloat16)
+        vae = AutoencoderKL.from_single_file(
+            vae_path,
+            torch_dtype=torch.bfloat16,
+            low_cpu_mem_usage=False,
+        )
 
-        # 4. Load Base SD 2.1 Pipeline with ControlNet and VAE
+        # 4. Load Base SD 2.1 components (UNet, Text Encoder, Tokenizer, Scheduler)
         sd_path = models_paths[Checkpoints.STABLE_DIFFUSION_V2_1]
         logger.info(f"Loading Stable Diffusion 2.1 from {sd_path}...")
-        self.pipe = StableDiffusionControlNetPipeline.from_single_file(
-            sd_path, controlnet=controlnet, vae=vae, torch_dtype=torch.bfloat16
+        temp_pipe = StableDiffusionControlNetPipeline.from_single_file(
+            sd_path,
+            config="sd2-community/stable-diffusion-2-1",
+            controlnet=controlnet,
+            vae=vae,
+            torch_dtype=torch.bfloat16,
         )
-        self.pipe.vae.enable_tiling()
-        self.pipe.to(self.device)
+        
+        # 5. Create CCSRUpscaler with extracted components
+        self.upscaler = CCSRUpscaler(
+            unet=temp_pipe.unet,
+            vae=vae,
+            controlnet=controlnet,
+            scheduler=temp_pipe.scheduler,
+            text_encoder=temp_pipe.text_encoder,
+            tokenizer=temp_pipe.tokenizer,
+            device=self.device,
+        )
+        self.upscaler.vae.enable_tiling()
 
         logger.info("Pipeline setup complete.")
 
@@ -180,7 +197,7 @@ class BgRemovalUpscalePipeline(BaseGenerationPipeline[PipelineConfig, BatchTask,
         rmbg_inputs = (
             torch.stack([transform_image(img.convert("RGB")) for img in pil_images])
             .to(self.device)
-            .to(torch.bfloat16)
+            .to(torch.float32)
         )
 
         with torch.inference_mode():
@@ -205,14 +222,14 @@ class BgRemovalUpscalePipeline(BaseGenerationPipeline[PipelineConfig, BatchTask,
         prompts = [item.prompt for item in items]
 
         with torch.inference_mode():
-            upscaled_images = self.pipe(
-                prompt=prompts,
-                image=control_images,
+            upscaled_images = self.upscaler(
+                images=control_images,
+                prompts=prompts,
                 height=target_dim,
                 width=target_dim,
                 num_inference_steps=config.ccsr_steps,
                 guidance_scale=config.ccsr_guidance_scale,
-            ).images
+            )
 
         # Step 3: GPU Guided Filter mask upscale
         logger.info("Step 3: Refining mask via GPU Guided Filter...")

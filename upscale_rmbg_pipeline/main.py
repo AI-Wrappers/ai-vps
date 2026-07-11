@@ -82,7 +82,7 @@ def main():
 
     pipeline = BgRemovalUpscalePipeline()
 
-    logger.info(
+    logging.info(
         f"Running pipeline with batch_size={batch_size}, vram_limit_pct={vram_limit_pct}, scale_factor={scale_factor}"
     )
     runner.run(pipeline=pipeline, raw_workload=merged_workload, config=config)
