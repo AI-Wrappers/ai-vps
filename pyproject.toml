@@ -5,20 +5,22 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "accelerate>=1.14.0",
-    "ai-pipeline-toolbox",
-    "diffusers>=0.39.0",
-    "kornia>=0.8.3",
-    "optimum-quanto>=0.2.7",
-    "peft>=0.19.1",
-    "pillow>=12.3.0",
-    "pytest>=9.1.1",
-    "pytest-mock>=3.15.1",
-    "torch>=2.13.0",
-    "torchao>=0.17.0",
-    "torchvision>=0.28.0",
-    "transformers>=5.13.0",
+  "accelerate>=1.14.0",
+  "ai-pipeline-toolbox",
+  "ccsr-pruned>=2.1.0",
+  "diffusers>=0.39.0",
+  "einops>=0.8.2",
+  "kornia>=0.8.3",
+  "optimum-quanto>=0.2.7",
+  "peft>=0.19.1",
+  "pillow>=12.3.0",
+  "pytest>=9.1.1",
+  "pytest-mock>=3.15.1",
+  "torch>=2.13.0",
+  "torchao>=0.17.0",
+  "torchvision>=0.28.0",
+  "transformers>=5.13.0",
 ]
 
 [tool.uv.sources]
-ai-pipeline-toolbox = { git = "https://github.com/AI-Wrappers/ai-pipeline-toolbox.git" }
+ai-pipeline-toolbox = { path = "../../ai-pipeline-toolbox", editable = true }
