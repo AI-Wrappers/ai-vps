@@ -1,4 +1,5 @@
 import os
+
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 import logging
 import sys
@@ -6,7 +7,12 @@ import json
 
 
 # Ensure the framework is in the python path if needed (for local tests)
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../ai-pipeline-toolbox-repo/src')))
+sys.path.insert(
+    0,
+    os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../ai-pipeline-toolbox-repo/src")
+    ),
+)
 
 from ai_pipeline_toolbox.orchestrator.runner import Runner
 from ai_pipeline_toolbox.components.state_manager import SQLiteStateManager
@@ -17,9 +23,12 @@ from ai_pipeline_toolbox.registry.generated_enums import Provider
 from flux_hf_pipeline.schemas import FluxConfig
 from flux_hf_pipeline.processor import GroupedWorkloadProcessor
 from flux_hf_pipeline.saver import ImageGroupResultSaver
-from flux_hf_pipeline.pipeline import Flux1DPipeline
+from flux_hf_pipeline.pipeline_1dev8Q import Flux1Dev8QPipeline
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
 
 def main():
     if len(sys.argv) < 2:
@@ -34,7 +43,6 @@ def main():
     with open(workload_path, "r", encoding="utf-8") as f:
         raw_workload = json.load(f)
 
-    
     # Initialize framework components
     runner = Runner(
         workload_processor=GroupedWorkloadProcessor(),
@@ -43,19 +51,26 @@ def main():
             "data/models_cache",
             tokens_for_provider={
                 Provider.CIVITAI: os.environ.get("CIVITAI_API_KEY"),
-                Provider.HUGGINGFACE: os.environ.get("HF_TOKEN")
-            }
+                Provider.HUGGINGFACE: os.environ.get("HF_TOKEN"),
+            },
         ),
         loop_manager=LoopManager(),
-        result_saver=ImageGroupResultSaver("data/outputs")
+        result_saver=ImageGroupResultSaver("data/outputs"),
     )
-    
 
-    config = FluxConfig(num_inference_steps=28, guidance_scale=3.5)
+    config = FluxConfig(
+        num_inference_steps=28,
+        guidance_scale=3.5,
+        height=1024,
+        width=1024,
+        max_sequence_length=512,
+        seed=-1,  # -1 for random, -2 for locked first-step seed, >=0 for explicit seed
+    )
 
-    pipeline = Flux1DPipeline()
-    
+    pipeline = Flux1Dev8QPipeline()
+
     runner.run(pipeline=pipeline, raw_workload=raw_workload, config=config)
+
 
 if __name__ == "__main__":
     main()

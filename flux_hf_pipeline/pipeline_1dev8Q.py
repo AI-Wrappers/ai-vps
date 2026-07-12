@@ -23,7 +23,7 @@ from flux_hf_pipeline.schemas import FluxConfig, FluxTask
 logger = logging.getLogger(__name__)
 
 
-class Flux1DPipeline(BaseGenerationPipeline[FluxConfig, FluxTask, Image.Image]):
+class Flux1Dev8QPipeline(BaseGenerationPipeline[FluxConfig, FluxTask, Image.Image]):
     required_models = [
         DiT.FLUX1D8Q,
         Vae.FLUX1D,

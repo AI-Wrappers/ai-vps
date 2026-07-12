@@ -12,9 +12,9 @@ from ai_pipeline_toolbox.components.loop_manager import LoopManager
 from flux_hf_pipeline.schemas import FluxConfig
 from flux_hf_pipeline.processor import GroupedWorkloadProcessor
 from flux_hf_pipeline.saver import ImageGroupResultSaver
-from flux_hf_pipeline.pipeline import Flux1DPipeline
+from flux_hf_pipeline.pipeline_1dev8Q import Flux1Dev8QPipeline
 
-@patch('flux_hf_pipeline.pipeline.FluxPipeline')
+@patch('flux_hf_pipeline.pipeline_1dev8Q.FluxPipeline')
 @patch('diffusers.FluxTransformer2DModel')
 @patch('diffusers.AutoencoderKL')
 @patch('transformers.CLIPTextModel')
@@ -72,7 +72,7 @@ def test_flux_pipeline_flow(mock_load_file, mock_t5, mock_clip, mock_vae, mock_t
     )
     
     config = FluxConfig(num_inference_steps=2, guidance_scale=3.5)
-    pipeline = Flux1DPipeline()
+    pipeline = Flux1Dev8QPipeline()
     
     # 4. Execute the orchestrator
     runner.run(pipeline=pipeline, raw_workload=raw_workload, config=config)
