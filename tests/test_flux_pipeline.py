@@ -75,8 +75,7 @@ def test_flux_pipeline_flow(mock_load_file, mock_t5, mock_clip, mock_vae, mock_t
     pipeline = Flux1DPipeline()
     
     # 4. Execute the orchestrator
-    with patch('torchao.quantization.quantize_') as mock_quantize:
-        runner.run(pipeline=pipeline, raw_workload=raw_workload, config=config)
+    runner.run(pipeline=pipeline, raw_workload=raw_workload, config=config)
     
     # 5. Assertions
     mock_flux_pipeline.from_pretrained.assert_called_once()
