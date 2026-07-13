@@ -32,6 +32,8 @@ class SimpleDirectoryWorkloadProcessor(BaseWorkloadProcessor):
         all_items = []
         for file_path in sorted(src_root.glob("**/*")):
             if file_path.is_file() and file_path.suffix.lower() in supported_extensions:
+                if file_path.stem.endswith(("_mask_1024", "_merged_1024")):
+                    continue
                 rel_path = file_path.relative_to(src_root)
                 all_items.append(ImageItem(
                     input_path=str(file_path),

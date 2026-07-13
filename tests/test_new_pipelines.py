@@ -33,6 +33,12 @@ def mock_directories(tmp_path):
 
 def test_bg_removal_processor(mock_directories):
     src, dst = mock_directories
+    
+    # Create some dummy output files in the source directory to test filtering
+    group_dir = src / "group1"
+    Image.new("RGB", (100, 100), color="blue").save(group_dir / "img_0_mask_1024.png")
+    Image.new("RGB", (100, 100), color="blue").save(group_dir / "img_0_merged_1024.png")
+
     processor = SimpleDirectoryWorkloadProcessor(default_batch_size=2)
     workload = {"src": str(src), "dst": str(dst)}
     
