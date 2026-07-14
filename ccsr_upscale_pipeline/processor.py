@@ -1,16 +1,20 @@
 import os
 import json
 import logging
+import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 from ai_pipeline_toolbox.core.interfaces import BaseWorkloadProcessor
 from ccsr_upscale_pipeline.schemas import BatchTask, ImageItem
+from ccsr_upscale_pipeline.gdrive_utils import GDriveClient
 
 logger = logging.getLogger(__name__)
 
 class DirectoryPromptWorkloadProcessor(BaseWorkloadProcessor):
     def __init__(self, default_batch_size: int = 4):
         self.default_batch_size = default_batch_size
+        self.gdrive = GDriveClient()
+        self.temp_dir = Path(tempfile.mkdtemp(prefix="ccsr_inputs_"))
 
     def process(self, raw_workload: Any) -> Iterable[BatchTask]:
         if isinstance(raw_workload, str):
@@ -31,52 +35,76 @@ class DirectoryPromptWorkloadProcessor(BaseWorkloadProcessor):
         flux_workload = raw_workload.get("flux_workload", {})
 
         prompt_lookup = {}
-        groups = flux_workload.get("groups", [])
+        # Parse the JSON structure properly based on user's confirmation
+        groups = flux_workload if isinstance(flux_workload, list) else flux_workload.get("groups", [])
         for group in groups:
-            g_name = group.get("group_name", "default_group")
+            g_name = group.get("group_name")
+            if not g_name:
+                continue
             for p in group.get("prompts", []):
-                p_name = p.get("name", "")
-                p_prompt = p.get("pos", "")
-                prompt_lookup[(g_name, p_name)] = p_prompt
-                prompt_lookup[p_name] = p_prompt
+                p_name = p.get("name")
+                if not p_name:
+                    continue
+                prompt_lookup[(g_name, p_name)] = p.get("pos", "")
 
-        src_root = Path(src).resolve()
-        dst_root = Path(dst).resolve()
-
-        if not src_root.exists():
-            raise FileNotFoundError(f"Source directory does not exist: {src_root}")
+        logger.info(f"Scanning Google Drive source folder: {src}")
+        gdrive_files = self.gdrive.list_files_recursively(src)
 
         supported_extensions = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
-        all_items = []
-        for file_path in sorted(src_root.glob("**/*")):
-            if file_path.is_file() and file_path.suffix.lower() in supported_extensions:
-                rel_path = file_path.relative_to(src_root)
+        matched_files = []
+        
+        for file_info in gdrive_files:
+            rel_path = file_info['rel_path']
+            suffix = rel_path.suffix.lower()
+            if suffix not in supported_extensions:
+                continue
                 
-                g_name = rel_path.parent.name
-                img_name = rel_path.stem
+            if len(rel_path.parts) < 2:
+                continue # Needs at least group_name/file_name
                 
-                matched_prompt = prompt_lookup.get((g_name, img_name)) or prompt_lookup.get(img_name) or ""
-                
-                all_items.append(ImageItem(
-                    input_path=str(file_path),
-                    relative_path=str(rel_path),
-                    prompt=matched_prompt
-                ))
+            g_name = rel_path.parent.name
+            img_name = rel_path.stem
+            
+            if (g_name, img_name) in prompt_lookup:
+                matched_prompt = prompt_lookup[(g_name, img_name)]
+                matched_files.append((file_info, matched_prompt))
+            else:
+                logger.debug(f"Skipping {rel_path} - no matching prompt found.")
 
-        if not all_items:
-            logger.warning(f"No supported images found in {src_root}")
+        if not matched_files:
+            logger.warning(f"No supported images with matching prompts found in {src}")
             return []
 
-        batches = []
-        for i in range(0, len(all_items), batch_size):
-            chunk = all_items[i:i + batch_size]
-            batch_id = f"batch_{i // batch_size:04d}"
-            batches.append(BatchTask(
-                task_id=batch_id,
-                src_root=str(src_root),
-                dst_root=str(dst_root),
-                items=chunk
-            ))
+        logger.info(f"Found {len(matched_files)} matching images. Creating batches of size {batch_size}.")
 
-        logger.info(f"Scanned {len(all_items)} images and created {len(batches)} batches (batch size: {batch_size}).")
-        return batches
+        for i in range(0, len(matched_files), batch_size):
+            chunk = matched_files[i:i + batch_size]
+            batch_id = f"batch_{i // batch_size:04d}"
+            
+            items = []
+            for file_info, matched_prompt in chunk:
+                file_id = file_info['id']
+                rel_path = file_info['rel_path']
+                parent_id = file_info['parent_id']
+                
+                # We need to make sure the local temp directory has the necessary subdirectories
+                local_dir = self.temp_dir / rel_path.parent
+                local_dir.mkdir(parents=True, exist_ok=True)
+                local_path = local_dir / rel_path.name
+                
+                # Download file
+                self.gdrive.download_file(file_id, local_path)
+                
+                items.append(ImageItem(
+                    input_path=str(local_path),
+                    relative_path=str(rel_path),
+                    prompt=matched_prompt,
+                    parent_id=parent_id
+                ))
+                
+            yield BatchTask(
+                task_id=batch_id,
+                src_root=src,
+                dst_root=dst,
+                items=items
+            )

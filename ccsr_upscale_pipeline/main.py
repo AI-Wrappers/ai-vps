@@ -40,10 +40,6 @@ def main():
     if not os.path.exists(flux_workload_path):
         logging.error(f"Flux workload file not found: {flux_workload_path}")
         sys.exit(1)
-        
-    if not os.path.exists(src_dir):
-        logging.error(f"Source directory not found: {src_dir}")
-        sys.exit(1)
 
     with open(flux_workload_path, "r", encoding="utf-8") as f:
         flux_workload = json.load(f)

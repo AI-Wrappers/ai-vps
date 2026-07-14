@@ -105,6 +105,7 @@ class CCSRUpscalePipeline(BaseGenerationPipeline[PipelineConfig, BatchTask, dict
         for j, item in enumerate(items):
             results[item.relative_path] = {
                 "upscale_4k": upscaled_images[j],
+                "item": item,
             }
 
         return {"dst_root": workload.dst_root, "items": results}

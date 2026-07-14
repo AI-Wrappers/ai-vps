@@ -11,6 +11,7 @@ class ImageItem(BaseModel):
     input_path: str
     relative_path: str
     prompt: str = ""
+    parent_id: str = ""
 
 class BatchTask(BaseModel):
     task_id: str
