@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 from ai_pipeline_toolbox.core.interfaces import BaseWorkloadProcessor
-from ccsr_upscale_pipeline.schemas import BatchTask, ImageItem
+from ccsr_upscale_pipeline.schemas import SingleTask, ImageItem
 from ccsr_upscale_pipeline.gdrive_utils import GDriveClient
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,10 @@ class DirectoryPromptWorkloadProcessor(BaseWorkloadProcessor):
                 p_name = p.get("name")
                 if not p_name:
                     continue
-                prompt_lookup[(g_name, p_name)] = p.get("pos", "")
+                prompt_lookup[(g_name, p_name)] = {
+                    "pos": p.get("pos", ""),
+                    "neg": p.get("neg", "")
+                }
 
         logger.info(f"Scanning Google Drive source folder: {src}")
         gdrive_files = self.gdrive.list_files_recursively(src)
@@ -66,8 +69,9 @@ class DirectoryPromptWorkloadProcessor(BaseWorkloadProcessor):
             img_name = rel_path.stem
             
             if (g_name, img_name) in prompt_lookup:
-                matched_prompt = prompt_lookup[(g_name, img_name)]
-                matched_files.append((file_info, matched_prompt))
+                matched_prompt = prompt_lookup[(g_name, img_name)]["pos"]
+                matched_neg_prompt = prompt_lookup[(g_name, img_name)]["neg"]
+                matched_files.append((file_info, matched_prompt, matched_neg_prompt))
             else:
                 logger.debug(f"Skipping {rel_path} - no matching prompt found.")
 
@@ -75,36 +79,32 @@ class DirectoryPromptWorkloadProcessor(BaseWorkloadProcessor):
             logger.warning(f"No supported images with matching prompts found in {src}")
             return []
 
-        logger.info(f"Found {len(matched_files)} matching images. Creating batches of size {batch_size}.")
+        logger.info(f"Found {len(matched_files)} matching images. Processing one by one.")
 
-        for i in range(0, len(matched_files), batch_size):
-            chunk = matched_files[i:i + batch_size]
-            batch_id = f"batch_{i // batch_size:04d}"
+        for i, (file_info, matched_prompt, matched_neg_prompt) in enumerate(matched_files):
+            task_id = f"task_{i:04d}"
             
-            items = []
-            for file_info, matched_prompt in chunk:
-                file_id = file_info['id']
-                rel_path = file_info['rel_path']
-                parent_id = file_info['parent_id']
-                
-                # We need to make sure the local temp directory has the necessary subdirectories
-                local_dir = self.temp_dir / rel_path.parent
-                local_dir.mkdir(parents=True, exist_ok=True)
-                local_path = local_dir / rel_path.name
-                
-                # Download file
-                self.gdrive.download_file(file_id, local_path)
-                
-                items.append(ImageItem(
-                    input_path=str(local_path),
-                    relative_path=str(rel_path),
-                    prompt=matched_prompt,
-                    parent_id=parent_id
-                ))
-                
-            yield BatchTask(
-                task_id=batch_id,
+            file_id = file_info['id']
+            rel_path = file_info['rel_path']
+            parent_id = file_info['parent_id']
+            
+            local_dir = self.temp_dir / rel_path.parent
+            local_dir.mkdir(parents=True, exist_ok=True)
+            local_path = local_dir / rel_path.name
+            
+            self.gdrive.download_file(file_id, local_path)
+            
+            item = ImageItem(
+                input_path=str(local_path),
+                relative_path=str(rel_path),
+                prompt=matched_prompt,
+                negative_prompt=matched_neg_prompt,
+                parent_id=parent_id
+            )
+            
+            yield SingleTask(
+                task_id=task_id,
                 src_root=src,
                 dst_root=dst,
-                items=items
+                item=item
             )

@@ -45,18 +45,16 @@ def main():
         flux_workload = json.load(f)
 
     scale_factor = 4
-    batch_size = int(os.environ.get("BATCH_SIZE", "4"))
     vram_limit_pct = float(os.environ.get("VRAM_LIMIT_PCT", "1.0"))
 
     merged_workload = {
         "flux_workload": flux_workload,
         "src": src_dir,
         "dst": dst_dir,
-        "batch_size": batch_size
     }
 
     runner = Runner(
-        workload_processor=DirectoryPromptWorkloadProcessor(default_batch_size=batch_size),
+        workload_processor=DirectoryPromptWorkloadProcessor(),
         state_manager=SQLiteStateManager("data/ccsr_upscale_state.db"),
         fetcher=ModelFetcher(
             "data/models_cache",
@@ -69,10 +67,22 @@ def main():
         result_saver=CcsrUpscaleResultSaver(),
     )
 
-    config = PipelineConfig(vram_limit_pct=vram_limit_pct, scale_factor=scale_factor)
+    config = PipelineConfig(
+        ccsr_steps=int(os.environ.get("CCSR_STEPS", "45")),
+        ccsr_guidance_scale=float(os.environ.get("CCSR_GUIDANCE_SCALE", "7.5")),
+        controlnet_conditioning_scale=float(os.environ.get("CONTROLNET_COND_SCALE", "1.0")),
+        control_guidance_start=float(os.environ.get("CONTROL_GUIDANCE_START", "0.0")),
+        control_guidance_end=float(os.environ.get("CONTROL_GUIDANCE_END", "1.0")),
+        eta=float(os.environ.get("ETA", "0.0")),
+        color_fix_type=os.environ.get("COLOR_FIX_TYPE", "adain"),
+        tile_stride_ratio=float(os.environ.get("TILE_STRIDE_RATIO", "0.5")),
+        seed=int(os.environ.get("SEED", "42")),
+        vram_limit_pct=vram_limit_pct, 
+        scale_factor=scale_factor
+    )
     pipeline = CCSRUpscalePipeline()
 
-    logging.info(f"Running CCSRUpscalePipeline with batch_size={batch_size}")
+    logging.info("Running CCSRUpscalePipeline (single-image with dynamic tiling)")
     runner.run(pipeline=pipeline, raw_workload=merged_workload, config=config)
 
 if __name__ == "__main__":

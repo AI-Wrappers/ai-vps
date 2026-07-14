@@ -1,6 +1,7 @@
 import os
 import io
 import json
+import base64
 import logging
 from pathlib import Path
 from google.oauth2 import service_account
@@ -12,13 +13,14 @@ logger = logging.getLogger(__name__)
 
 class GDriveClient:
     def __init__(self):
-        creds_json_str = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
-        if not creds_json_str:
+        creds_b64 = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+        if not creds_b64:
             raise ValueError("GOOGLE_APPLICATION_CREDENTIALS_JSON environment variable not set.")
         try:
+            creds_json_str = base64.b64decode(creds_b64).decode('utf-8')
             creds_info = json.loads(creds_json_str)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in GOOGLE_APPLICATION_CREDENTIALS_JSON: {e}")
+        except Exception as e:
+            raise ValueError(f"Failed to decode or parse GOOGLE_APPLICATION_CREDENTIALS_JSON: {e}")
             
         self.credentials = service_account.Credentials.from_service_account_info(
             creds_info, scopes=["https://www.googleapis.com/auth/drive"]
