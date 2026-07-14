@@ -26,10 +26,11 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
+
 def main():
     if len(sys.argv) < 3:
         logging.error(
-            "Usage: python -m ccsr_upscale_pipeline.main <path_to_flux_workload.json> <path_to_src_directory> <path_to_dst_directory>"
+            "Usage: python -m ccsr_upscale_pipeline.main <path_to_flux_workload.json> <gdrive_src_folder_id> [gdrive_dst_folder_id]"
         )
         sys.exit(1)
 
@@ -45,7 +46,7 @@ def main():
         flux_workload = json.load(f)
 
     scale_factor = 4
-    vram_limit_pct = float(os.environ.get("VRAM_LIMIT_PCT", "1.0"))
+    vram_limit_pct = 1.0
 
     merged_workload = {
         "flux_workload": flux_workload,
@@ -70,20 +71,23 @@ def main():
     config = PipelineConfig(
         ccsr_steps=int(os.environ.get("CCSR_STEPS", "45")),
         ccsr_guidance_scale=float(os.environ.get("CCSR_GUIDANCE_SCALE", "7.5")),
-        controlnet_conditioning_scale=float(os.environ.get("CONTROLNET_COND_SCALE", "1.0")),
+        controlnet_conditioning_scale=float(
+            os.environ.get("CONTROLNET_COND_SCALE", "1.0")
+        ),
         control_guidance_start=float(os.environ.get("CONTROL_GUIDANCE_START", "0.0")),
         control_guidance_end=float(os.environ.get("CONTROL_GUIDANCE_END", "1.0")),
         eta=float(os.environ.get("ETA", "0.0")),
         color_fix_type=os.environ.get("COLOR_FIX_TYPE", "adain"),
         tile_stride_ratio=float(os.environ.get("TILE_STRIDE_RATIO", "0.5")),
         seed=int(os.environ.get("SEED", "42")),
-        vram_limit_pct=vram_limit_pct, 
-        scale_factor=scale_factor
+        vram_limit_pct=vram_limit_pct,
+        scale_factor=scale_factor,
     )
     pipeline = CCSRUpscalePipeline()
 
     logging.info("Running CCSRUpscalePipeline (single-image with dynamic tiling)")
     runner.run(pipeline=pipeline, raw_workload=merged_workload, config=config)
+
 
 if __name__ == "__main__":
     main()

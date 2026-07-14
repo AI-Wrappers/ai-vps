@@ -16,7 +16,7 @@ class DirectoryPromptWorkloadProcessor(BaseWorkloadProcessor):
         self.gdrive = GDriveClient()
         self.temp_dir = Path(tempfile.mkdtemp(prefix="ccsr_inputs_"))
 
-    def process(self, raw_workload: Any) -> Iterable[BatchTask]:
+    def process(self, raw_workload: Any) -> Iterable[SingleTask]:
         if isinstance(raw_workload, str):
             try:
                 raw_workload = json.loads(raw_workload)
