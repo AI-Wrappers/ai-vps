@@ -3,6 +3,8 @@ import io
 import json
 import base64
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -174,4 +176,112 @@ class GDriveClient:
             page_token = response.get("nextPageToken", None)
             if page_token is None:
                 break
+
+
+class GDriveDownloader:
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls, *args, **kwargs):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super(GDriveDownloader, cls).__new__(cls)
+                cls._instance._initialized = False
+            return cls._instance
+
+    def __init__(self, gdrive_client=None, window_size: int = 24, max_workers: int = 4):
+        if getattr(self, "_initialized", False):
+            return
+        self.gdrive = gdrive_client
+        self.window_size = window_size
+        self.executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="gdrive_downloader")
+        self.tasks = []  # list of SingleTask
+        self.futures = {}  # task_id -> Future
+        self.downloaded_files = set()  # paths that are successfully downloaded
+        self.lock = threading.Lock()
+        self.current_idx = 0
+        self._initialized = True
+
+    def reset(self, gdrive_client, window_size: int):
+        with self.lock:
+            self.gdrive = gdrive_client
+            self.window_size = window_size
+            self.tasks = []
+            self.futures = {}
+            self.downloaded_files = set()
+            self.current_idx = 0
+
+    def set_tasks(self, tasks):
+        with self.lock:
+            self.tasks = tasks
+            # Start downloading the first window_size files
+            for i in range(min(self.window_size, len(self.tasks))):
+                self._start_download_nolock(i)
+
+    def _start_download_nolock(self, index: int):
+        if index >= len(self.tasks):
+            return
+        task = self.tasks[index]
+        task_id = task.task_id
+        if task_id in self.futures:
+            return  # Already queued or done
+            
+        file_id = task.item.file_id
+        local_path = Path(task.item.input_path)
+        
+        logger.info(f"Queueing background download for task {task_id}: {local_path.name}")
+        future = self.executor.submit(self._download_job, file_id, local_path, task_id)
+        self.futures[task_id] = future
+
+    def _download_job(self, file_id: str, local_path: Path, task_id: str):
+        try:
+            # Caching: check if file exists and is not empty
+            if local_path.exists() and local_path.stat().st_size > 0:
+                logger.info(f"File {local_path} already exists locally, skipping download (cached).")
+                with self.lock:
+                    self.downloaded_files.add(str(local_path))
+                return
+                
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            client = GDriveClient()
+            client.download_file(file_id, local_path)
+            
+            with self.lock:
+                self.downloaded_files.add(str(local_path))
+            logger.info(f"Finished background download for task {task_id}: {local_path.name}")
+        except Exception as e:
+            logger.error(f"Failed background download for task {task_id}: {e}", exc_info=True)
+            raise
+
+    def wait_for_task(self, task_id: str):
+        future = None
+        with self.lock:
+            future = self.futures.get(task_id)
+            
+        if future is None:
+            # If not yet queued (outside current window), start it now
+            with self.lock:
+                # Find task index
+                task_idx = -1
+                for idx, t in enumerate(self.tasks):
+                    if t.task_id == task_id:
+                        task_idx = idx
+                        break
+                if task_idx != -1:
+                    self._start_download_nolock(task_idx)
+                    future = self.futures.get(task_id)
+                    
+        if future is not None:
+            future.result()  # Block until complete
+        else:
+            raise ValueError(f"Task {task_id} not found in downloader tasks.")
+
+    def on_task_start(self, task_idx: int):
+        with self.lock:
+            self.current_idx = task_idx
+            # Slide window: make sure the next tasks up to task_idx + window_size - 1 are downloading
+            for i in range(task_idx, min(task_idx + self.window_size, len(self.tasks))):
+                self._start_download_nolock(i)
+
+
 

@@ -15,7 +15,7 @@ class CcsrUpscaleResultSaver(BaseResultSaver):
 
     def _upload_and_cleanup(self, item, img_data, base_name: str) -> None:
         try:
-            out_name = f"{base_name}_upscale_4k.png"
+            out_name = f"{base_name}_upscaled.png"
             parent_id = item.parent_id
             
             if not parent_id:

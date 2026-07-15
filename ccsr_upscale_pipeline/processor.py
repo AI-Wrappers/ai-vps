@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Iterable
 from ai_pipeline_toolbox.core.interfaces import BaseWorkloadProcessor
 from ccsr_upscale_pipeline.schemas import SingleTask, ImageItem
-from ccsr_upscale_pipeline.gdrive_utils import GDriveClient
+from ccsr_upscale_pipeline.gdrive_utils import GDriveClient, GDriveDownloader
 
 logger = logging.getLogger(__name__)
 
@@ -79,8 +79,9 @@ class DirectoryPromptWorkloadProcessor(BaseWorkloadProcessor):
             logger.warning(f"No supported images with matching prompts found in {src}")
             return []
 
-        logger.info(f"Found {len(matched_files)} matching images. Processing one by one.")
+        logger.info(f"Found {len(matched_files)} matching images. Initializing background download queue.")
 
+        tasks = []
         for i, (file_info, matched_prompt, matched_neg_prompt) in enumerate(matched_files):
             task_id = f"task_{i:04d}"
             
@@ -89,22 +90,28 @@ class DirectoryPromptWorkloadProcessor(BaseWorkloadProcessor):
             parent_id = file_info['parent_id']
             
             local_dir = self.temp_dir / rel_path.parent
-            local_dir.mkdir(parents=True, exist_ok=True)
             local_path = local_dir / rel_path.name
-            
-            self.gdrive.download_file(file_id, local_path)
             
             item = ImageItem(
                 input_path=str(local_path),
                 relative_path=str(rel_path),
                 prompt=matched_prompt,
                 negative_prompt=matched_neg_prompt,
-                parent_id=parent_id
+                parent_id=parent_id,
+                file_id=file_id
             )
             
-            yield SingleTask(
+            tasks.append(SingleTask(
                 task_id=task_id,
                 src_root=src,
                 dst_root=dst,
                 item=item
-            )
+            ))
+
+        # Start the background downloader with a sliding window of 24
+        downloader = GDriveDownloader(gdrive_client=self.gdrive, window_size=24)
+        downloader.reset(self.gdrive, window_size=24)
+        downloader.set_tasks(tasks)
+
+        for task in tasks:
+            yield task

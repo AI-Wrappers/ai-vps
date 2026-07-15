@@ -12,6 +12,7 @@ from ai_pipeline_toolbox.core.pipeline import BaseGenerationPipeline
 from ai_pipeline_toolbox.registry.generated_enums import Checkpoints, Controlnet, Vae
 
 from ccsr_upscale_pipeline.schemas import PipelineConfig, SingleTask
+from ccsr_upscale_pipeline.gdrive_utils import GDriveDownloader
 from diffusers import AutoencoderKL
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,17 @@ class CCSRUpscalePipeline(BaseGenerationPipeline[PipelineConfig, SingleTask, dic
 
     def __call__(self, config: PipelineConfig, workload: SingleTask) -> dict:
         logger.info(f"Executing CCSR upscale task: {workload.task_id}")
+
+        downloader = GDriveDownloader()
+        task_idx = 0
+        for idx, t in enumerate(downloader.tasks):
+            if t.task_id == workload.task_id:
+                task_idx = idx
+                break
+
+        # Advance sliding window and wait for download to finish
+        downloader.on_task_start(task_idx)
+        downloader.wait_for_task(workload.task_id)
 
         item = workload.item
         pil_image = Image.open(item.input_path).convert("RGB")

@@ -20,6 +20,7 @@ class ImageItem(BaseModel):
     prompt: str = ""
     negative_prompt: str = ""
     parent_id: str = ""
+    file_id: str = ""
 
 class SingleTask(BaseModel):
     task_id: str
