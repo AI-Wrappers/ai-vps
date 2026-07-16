@@ -64,7 +64,7 @@ dependencies = [
 requires-dist = [
     { name = "accelerate", specifier = ">=1.14.0" },
     { name = "ai-pipeline-toolbox", git = "https://github.com/AI-Wrappers/ai-pipeline-toolbox.git" },
-    { name = "ccsr-pruned", specifier = ">=2.2.0" },
+    { name = "ccsr-pruned", specifier = ">=2.2.1" },
     { name = "diffusers", specifier = ">=0.39.0" },
     { name = "gguf", specifier = ">=0.19.0" },
     { name = "google-api-python-client", specifier = ">=2.100.0" },
@@ -130,7 +130,7 @@ wheels = [
 
 [[package]]
 name = "ccsr-pruned"
-version = "2.2.0"
+version = "2.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "accelerate" },
@@ -142,9 +142,9 @@ dependencies = [
     { name = "torchvision" },
     { name = "transformers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/56/27/216306fabbe70042d6df869e53487f36513dd5f1048c4a5833769de749c1/ccsr_pruned-2.2.0.tar.gz", hash = "sha256:de065bd794ed2040db7e580fd2eed39c457c80b2f20c3b245ae2c688c890a7eb", size = 118284, upload-time = "2026-07-16T17:09:21.603Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6c/f5/5798446374dab0d2d235281d0b75fc8c0b906ab2fc906249d5ce160f389d/ccsr_pruned-2.2.1.tar.gz", hash = "sha256:dd9fc33133e7442f5a820eab97938adaba827123b6cc169d7957f3bcaaed2f80", size = 118804, upload-time = "2026-07-16T19:27:54.243Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ca/0a/ad2f47726f174b38e21ce2975ec3f17e75591c9e5524becc7ffd8e0dc786/ccsr_pruned-2.2.0-py3-none-any.whl", hash = "sha256:0c66f3024f6b13263ad6b46bd12b971ceac2aaf6054a003d7527b2d108a80427", size = 67374, upload-time = "2026-07-16T17:09:20.404Z" },
+    { url = "https://files.pythonhosted.org/packages/7c/ce/ac5517e3d833f5107c49551d956c6d6c230cd412301d1a0a206e79efa11c/ccsr_pruned-2.2.1-py3-none-any.whl", hash = "sha256:d48e50b79bbf7fa655d49d0e12aa8fe67ebdb9b3c903e83737a34ed2ae5e9dfa", size = 67833, upload-time = "2026-07-16T19:27:53.319Z" },
 ]
 
 [[package]]

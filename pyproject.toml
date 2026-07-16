@@ -7,7 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
   "accelerate>=1.14.0",
   "ai-pipeline-toolbox",
-  "ccsr-pruned>=2.2.0",
+  "ccsr-pruned>=2.2.1",
   "diffusers>=0.39.0",
   "gguf>=0.19.0",
   "google-api-python-client>=2.100.0",

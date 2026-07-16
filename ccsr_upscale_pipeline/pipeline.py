@@ -29,8 +29,8 @@ class CCSRUpscalePipeline(BaseGenerationPipeline[PipelineConfig, SingleTask, dic
         self.upscaler = CCSRUpscaler(
             controlnet=(model_repo, "controlnet"),
             vae=(model_repo, "vae"),
-            unet=(model_repo, "unet"),
-            text_encoder=(model_repo, "text_encoder"),
+            unet=(model_repo, "unet", "fp16"),
+            text_encoder=(model_repo, "text_encoder", "fp16"),
             tokenizer=(model_repo, "tokenizer"),
             feature_extractor=(model_repo, "feature_extractor"),
             scheduler=(model_repo, "scheduler"),

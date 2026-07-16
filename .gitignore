@@ -6,8 +6,8 @@ dist/
 wheels/
 *.egg-info
 
-# Virtual environments
-.venv
+.data/
+.venv/
 data/
 service_account.json
 credentials.json
