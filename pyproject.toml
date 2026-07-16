@@ -5,17 +5,25 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "accelerate>=1.14.0",
-    "ai-pipeline-toolbox",
-    "diffusers>=0.39.0",
-    "kornia>=0.8.3",
-    "peft>=0.19.1",
-    "pillow>=12.3.0",
-    "pytest>=9.1.1",
-    "pytest-mock>=3.15.1",
-    "torch>=2.13.0",
-    "torchvision>=0.28.0",
-    "transformers>=5.13.0",
+  "accelerate>=1.14.0",
+  "ai-pipeline-toolbox",
+  "ccsr-pruned>=2.2.0",
+  "diffusers>=0.39.0",
+  "gguf>=0.19.0",
+  "google-api-python-client>=2.100.0",
+  "google-auth-httplib2>=0.2.0",
+  "google-auth-oauthlib>=1.2.0",
+  "kornia>=0.8.3",
+  "optimum-quanto>=0.2.7",
+  "peft>=0.19.1",
+  "pillow>=12.3.0",
+  "pytest>=9.1.1",
+  "pytest-mock>=3.15.1",
+  "tenacity>=8.3.0",
+  "timm>=1.0.28",
+  "torch>=2.13.0",
+  "torchvision>=0.28.0",
+  "transformers>=5.13.0",
 ]
 
 [tool.uv.sources]
