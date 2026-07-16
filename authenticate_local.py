@@ -1,19 +1,34 @@
 import os
 import json
-import base64
 from google_auth_oauthlib.flow import Flow
 
+def find_credentials_dir():
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    while True:
+        if os.path.exists(os.path.join(current_dir, "_put_credentials_and_token_here")):
+            return current_dir
+        parent_dir = os.path.dirname(current_dir)
+        if parent_dir == current_dir:
+            break
+        current_dir = parent_dir
+    return current_dir
+
 def main():
-    secret_b64 = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET_BASE64")
-    if not secret_b64:
-        print("Error: GOOGLE_OAUTH_CLIENT_SECRET_BASE64 environment variable not found.")
-        print("Please export it as a base64 encoded string of your client_secret.json desktop credentials.")
+    creds_dir = find_credentials_dir()
+    credentials_path = os.path.join(creds_dir, "credentials.json")
+    token_path = os.path.join(creds_dir, "token.json")
+
+    if not os.path.exists(credentials_path):
+        print(f"Error: Client credentials file not found at: {credentials_path}")
+        print("Please download your OAuth client secret JSON (Desktop application) from Google Cloud Console,")
+        print("place it there, and rename it to 'credentials.json'.")
         return
 
     try:
-        client_config = json.loads(base64.b64decode(secret_b64).decode("utf-8"))
+        with open(credentials_path, "r", encoding="utf-8") as f:
+            client_config = json.load(f)
     except Exception as e:
-        print(f"Error decoding GOOGLE_OAUTH_CLIENT_SECRET_BASE64: {e}")
+        print(f"Error loading credentials from {credentials_path}: {e}")
         return
 
     # Using drive.file scope so the token only has access to files/folders created by this app
@@ -44,12 +59,12 @@ def main():
     flow.fetch_token(code=code)
     creds = flow.credentials
 
-    creds_json = creds.to_json()
-    creds_b64 = base64.b64encode(creds_json.encode("utf-8")).decode("utf-8")
+    print(f"\nSaving token to {token_path}...")
+    with open(token_path, "w", encoding="utf-8") as f:
+        f.write(creds.to_json())
 
     print("\nSUCCESS!")
-    print("Add this environment variable to your VPS:")
-    print(f"\nexport GOOGLE_OAUTH_TOKEN_BASE64=\"{creds_b64}\"\n")
+    print(f"Saved OAuth token to: {token_path}")
 
 if __name__ == "__main__":
     main()

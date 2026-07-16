@@ -64,7 +64,7 @@ dependencies = [
 requires-dist = [
     { name = "accelerate", specifier = ">=1.14.0" },
     { name = "ai-pipeline-toolbox", git = "https://github.com/AI-Wrappers/ai-pipeline-toolbox.git" },
-    { name = "ccsr-pruned", specifier = ">=2.1.0" },
+    { name = "ccsr-pruned", specifier = ">=2.2.0" },
     { name = "diffusers", specifier = ">=0.39.0" },
     { name = "gguf", specifier = ">=0.19.0" },
     { name = "google-api-python-client", specifier = ">=2.100.0" },
@@ -130,12 +130,11 @@ wheels = [
 
 [[package]]
 name = "ccsr-pruned"
-version = "2.1.0"
+version = "2.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "accelerate" },
     { name = "diffusers" },
-    { name = "einops" },
     { name = "numpy" },
     { name = "pillow" },
     { name = "safetensors" },
@@ -143,9 +142,9 @@ dependencies = [
     { name = "torchvision" },
     { name = "transformers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c8/26/0ae2a3d199d004fdfc6a66ada5836ebae91a5c5d0466ec30fcc85714494e/ccsr_pruned-2.1.0.tar.gz", hash = "sha256:89e99c167eaf174ad36c12a566242b9967aac09e5b427d5435115e59d20195e4", size = 116045, upload-time = "2026-07-11T20:21:27.735Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/56/27/216306fabbe70042d6df869e53487f36513dd5f1048c4a5833769de749c1/ccsr_pruned-2.2.0.tar.gz", hash = "sha256:de065bd794ed2040db7e580fd2eed39c457c80b2f20c3b245ae2c688c890a7eb", size = 118284, upload-time = "2026-07-16T17:09:21.603Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b3/cb/15f12d22a813b0ce65549de8cd6ea422e6353d2fb25edfc3708a806a3497/ccsr_pruned-2.1.0-py3-none-any.whl", hash = "sha256:ee047ca9089d8b566321205822a1df28f103ae96b9753c2b469ef5e68a619257", size = 63249, upload-time = "2026-07-11T20:21:26.814Z" },
+    { url = "https://files.pythonhosted.org/packages/ca/0a/ad2f47726f174b38e21ce2975ec3f17e75591c9e5524becc7ffd8e0dc786/ccsr_pruned-2.2.0-py3-none-any.whl", hash = "sha256:0c66f3024f6b13263ad6b46bd12b971ceac2aaf6054a003d7527b2d108a80427", size = 67374, upload-time = "2026-07-16T17:09:20.404Z" },
 ]
 
 [[package]]
@@ -440,15 +439,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/1a/81/6095237b86a3116c4789f28c4435d5296c00c0fc74ffde99008fd6b3a36c/diffusers-0.39.0.tar.gz", hash = "sha256:14bb1d98c85a0e463d734c99aaa73b480a7bc9bad22af30fbf730ef8f09c1d67", size = 4651240, upload-time = "2026-07-03T08:48:47.904Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3f/3f/7469c46e9d22307ea686bab687d70e6bf328722952f9d10339f5e913e608/diffusers-0.39.0-py3-none-any.whl", hash = "sha256:912aca51b5787365110806e984d5555735bf8a461073bb8459029d0bca7870ef", size = 5631176, upload-time = "2026-07-03T08:48:45.337Z" },
-]
-
-[[package]]
-name = "einops"
-version = "0.8.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/2c/77/850bef8d72ffb9219f0b1aac23fbc1bf7d038ee6ea666f331fa273031aa2/einops-0.8.2.tar.gz", hash = "sha256:609da665570e5e265e27283aab09e7f279ade90c4f01bcfca111f3d3e13f2827", size = 56261, upload-time = "2026-01-26T04:13:17.638Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/2a/09/f8d8f8f31e4483c10a906437b4ce31bdf3d6d417b73fe33f1a8b59e34228/einops-0.8.2-py3-none-any.whl", hash = "sha256:54058201ac7087911181bfec4af6091bb59380360f069276601256a76af08193", size = 65638, upload-time = "2026-01-26T04:13:18.546Z" },
 ]
 
 [[package]]

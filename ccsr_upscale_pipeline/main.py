@@ -46,7 +46,6 @@ def main():
         flux_workload = json.load(f)
 
     scale_factor = 4
-    vram_limit_pct = 1.0
 
     merged_workload = {
         "flux_workload": flux_workload,
@@ -68,19 +67,10 @@ def main():
         result_saver=CcsrUpscaleResultSaver(),
     )
 
+    import random
+
     config = PipelineConfig(
-        ccsr_steps=int(os.environ.get("CCSR_STEPS", "45")),
-        ccsr_guidance_scale=float(os.environ.get("CCSR_GUIDANCE_SCALE", "7.5")),
-        controlnet_conditioning_scale=float(
-            os.environ.get("CONTROLNET_COND_SCALE", "1.0")
-        ),
-        control_guidance_start=float(os.environ.get("CONTROL_GUIDANCE_START", "0.0")),
-        control_guidance_end=float(os.environ.get("CONTROL_GUIDANCE_END", "1.0")),
-        eta=float(os.environ.get("ETA", "0.0")),
-        color_fix_type=os.environ.get("COLOR_FIX_TYPE", "adain"),
-        tile_stride_ratio=float(os.environ.get("TILE_STRIDE_RATIO", "0.5")),
-        seed=int(os.environ.get("SEED", "42")),
-        vram_limit_pct=vram_limit_pct,
+        seed=random.randint(0, 999999),
         scale_factor=scale_factor,
     )
     pipeline = CCSRUpscalePipeline()

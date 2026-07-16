@@ -1,7 +1,6 @@
 import os
 import io
 import json
-import base64
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -10,25 +9,51 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from tenacity import retry, wait_exponential, stop_after_attempt
+from google.oauth2.credentials import Credentials
 
 logger = logging.getLogger(__name__)
 
+# Logger specifically for upload/download actions to write to .data/here.log
+transfer_logger = logging.getLogger("gdrive_transfer")
+transfer_logger.setLevel(logging.INFO)
+transfer_logger.propagate = False
+try:
+    os.makedirs(".data", exist_ok=True)
+    _fh = logging.FileHandler(".data/here.log", encoding="utf-8")
+    _fh.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    transfer_logger.addHandler(_fh)
+except Exception as _e:
+    logger.warning(f"Could not initialize .data/here.log FileHandler: {_e}")
 
-from google.oauth2.credentials import Credentials
+
+def find_credentials_dir():
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    while True:
+        if os.path.exists(os.path.join(current_dir, "_put_credentials_and_token_here")):
+            return current_dir
+        parent_dir = os.path.dirname(current_dir)
+        if parent_dir == current_dir:
+            break
+        current_dir = parent_dir
+    return current_dir
+
 
 class GDriveClient:
-    def __init__(self, sa_creds_b64=None, oauth_token_b64=None):
+    def __init__(self, sa_creds_path=None, oauth_token_path=None):
+        creds_dir = find_credentials_dir()
+        
         # 1. Initialize Read Service (Service Account)
-        sa_b64 = sa_creds_b64 or os.environ.get("GOOGLE_GDRIVE_CREDENTIALS_BASE64") or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
-        if not sa_b64:
+        sa_path = sa_creds_path or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") or os.path.join(creds_dir, "service_account.json")
+        if not os.path.exists(sa_path):
             raise ValueError(
-                "Neither GOOGLE_GDRIVE_CREDENTIALS_BASE64 nor GOOGLE_APPLICATION_CREDENTIALS_JSON environment variable is set."
+                f"Service Account credentials file not found at {sa_path}. "
+                f"Please place your service_account.json file there."
             )
         try:
-            sa_json = base64.b64decode(sa_b64).decode("utf-8")
-            sa_info = json.loads(sa_json)
+            with open(sa_path, "r", encoding="utf-8") as f:
+                sa_info = json.load(f)
         except Exception as e:
-            raise ValueError(f"Failed to decode or parse Service Account credentials: {e}")
+            raise ValueError(f"Failed to read or parse Service Account credentials from {sa_path}: {e}")
             
         self.sa_credentials = service_account.Credentials.from_service_account_info(
             sa_info, scopes=["https://www.googleapis.com/auth/drive"]
@@ -38,16 +63,17 @@ class GDriveClient:
         )
 
         # 2. Initialize Write Service (OAuth User Token)
-        token_b64 = oauth_token_b64 or os.environ.get("GOOGLE_OAUTH_TOKEN_BASE64")
-        if not token_b64:
+        token_path = oauth_token_path or os.path.join(creds_dir, "token.json")
+        if not os.path.exists(token_path):
             raise ValueError(
-                "GOOGLE_OAUTH_TOKEN_BASE64 environment variable is not set."
+                f"OAuth User Token file not found at {token_path}. "
+                f"Please run authenticate_local.py first to generate it."
             )
         try:
-            token_json = base64.b64decode(token_b64).decode("utf-8")
-            token_info = json.loads(token_json)
+            with open(token_path, "r", encoding="utf-8") as f:
+                token_info = json.load(f)
         except Exception as e:
-            raise ValueError(f"Failed to decode or parse OAuth User Token: {e}")
+            raise ValueError(f"Failed to read or parse OAuth User Token from {token_path}: {e}")
 
         self.oauth_credentials = Credentials.from_authorized_user_info(
             token_info, scopes=["https://www.googleapis.com/auth/drive.file"]
@@ -58,6 +84,8 @@ class GDriveClient:
             try:
                 from google.auth.transport.requests import Request
                 self.oauth_credentials.refresh(Request())
+                with open(token_path, "w", encoding="utf-8") as f:
+                    f.write(self.oauth_credentials.to_json())
             except Exception as e:
                 logger.warning(f"Failed to refresh OAuth credentials: {e}")
 
@@ -90,6 +118,7 @@ class GDriveClient:
                     spaces="drive",
                     fields="nextPageToken, files(id, name, mimeType)",
                     pageToken=page_token,
+                    orderBy="name",
                 )
                 .execute()
             )
@@ -111,13 +140,15 @@ class GDriveClient:
             page_token = response.get("nextPageToken", None)
             if page_token is None:
                 break
+        if current_path == Path(""):
+            results.sort(key=lambda x: x["name"])
         return results
 
     @retry(
         wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(5)
     )
     def download_file(self, file_id: str, local_path: Path) -> None:
-        logger.info(f"Downloading Google Drive file {file_id} to {local_path}")
+        transfer_logger.info(f"Downloading Google Drive file {file_id} to {local_path}")
         request = self.read_service.files().get_media(fileId=file_id)
         with open(local_path, "wb") as f:
             downloader = MediaIoBaseDownload(f, request)
@@ -135,7 +166,7 @@ class GDriveClient:
         file_stream: io.BytesIO,
         mime_type: str = "image/png",
     ) -> str:
-        logger.info(f"Uploading file {file_name} to Google Drive folder {parent_id}")
+        transfer_logger.info(f"Uploading file {file_name} to Google Drive folder {parent_id}")
         file_metadata = {"name": file_name, "parents": [parent_id]}
         media = MediaIoBaseUpload(file_stream, mimetype=mime_type, resumable=True)
         file = (
@@ -229,7 +260,7 @@ class GDriveDownloader:
         file_id = task.item.file_id
         local_path = Path(task.item.input_path)
         
-        logger.info(f"Queueing background download for task {task_id}: {local_path.name}")
+        transfer_logger.info(f"Queueing background download for task {task_id}: {local_path.name}")
         future = self.executor.submit(self._download_job, file_id, local_path, task_id)
         self.futures[task_id] = future
 
@@ -237,7 +268,7 @@ class GDriveDownloader:
         try:
             # Caching: check if file exists and is not empty
             if local_path.exists() and local_path.stat().st_size > 0:
-                logger.info(f"File {local_path} already exists locally, skipping download (cached).")
+                transfer_logger.info(f"File {local_path} already exists locally, skipping download (cached).")
                 with self.lock:
                     self.downloaded_files.add(str(local_path))
                 return
@@ -248,9 +279,9 @@ class GDriveDownloader:
             
             with self.lock:
                 self.downloaded_files.add(str(local_path))
-            logger.info(f"Finished background download for task {task_id}: {local_path.name}")
+            transfer_logger.info(f"Finished background download for task {task_id}: {local_path.name}")
         except Exception as e:
-            logger.error(f"Failed background download for task {task_id}: {e}", exc_info=True)
+            transfer_logger.error(f"Failed background download for task {task_id}: {e}", exc_info=True)
             raise
 
     def wait_for_task(self, task_id: str):
@@ -282,6 +313,3 @@ class GDriveDownloader:
             # Slide window: make sure the next tasks up to task_idx + window_size - 1 are downloading
             for i in range(task_idx, min(task_idx + self.window_size, len(self.tasks))):
                 self._start_download_nolock(i)
-
-
-

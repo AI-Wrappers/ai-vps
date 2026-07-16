@@ -9,6 +9,6 @@ wheels/
 # Virtual environments
 .venv
 data/
-ai-pipeline-toolbox-repo/
-briia-rmbg2.md
-flux1D.md
+service_account.json
+credentials.json
+token.json
