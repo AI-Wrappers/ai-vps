@@ -1,10 +1,11 @@
 import os
+import gc
 import torch
 import logging
 from typing import Dict, List, Union
 from enum import Enum
 from PIL import Image
-
+import ccsr
 from ccsr import CCSRUpscaler
 
 from ai_pipeline_toolbox.core.pipeline import BaseGenerationPipeline
@@ -19,10 +20,13 @@ class CCSRUpscalePipeline(BaseGenerationPipeline[PipelineConfig, SingleTask, dic
     required_models = []
 
     def setup(self, models_paths: Dict[Union[Enum, str], str]) -> None:
-        import ccsr
+        logger.info("Clearing GPU memory before setup...")
+        gc.collect()
+        torch.cuda.empty_cache()
+
         ccsr.set_logger(logger)
         logger.info("Setting up CCSRUpscalePipeline using ccsr-pruned...")
-        
+
         # Load directly from HuggingFace repository using the wrapper's native from_pretrained() loader
         model_repo = "kharma1/ccsr_v2_repost"
 
@@ -36,7 +40,7 @@ class CCSRUpscalePipeline(BaseGenerationPipeline[PipelineConfig, SingleTask, dic
             scheduler=(model_repo, "scheduler"),
             sample_method="ddpm",
             mixed_precision="fp16",
-            tile_vae=True
+            tile_vae=True,
         )
         logger.info("CCSRUpscalePipeline setup complete.")
 
@@ -75,5 +79,9 @@ class CCSRUpscalePipeline(BaseGenerationPipeline[PipelineConfig, SingleTask, dic
                 "item": item,
             }
         }
+
+        # Clear GPU memory after generation
+        gc.collect()
+        torch.cuda.empty_cache()
 
         return {"dst_root": workload.dst_root, "items": results}
