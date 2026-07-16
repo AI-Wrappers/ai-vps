@@ -20,9 +20,10 @@ class CCSRUpscalePipeline(BaseGenerationPipeline[PipelineConfig, SingleTask, dic
 
     def setup(self, models_paths: Dict[Union[Enum, str], str]) -> None:
         import ccsr
+
         ccsr.set_logger(logger)
         logger.info("Setting up CCSRUpscalePipeline using ccsr-pruned...")
-        
+
         # Load directly from HuggingFace repository using the wrapper's native from_pretrained() loader
         model_repo = "kharma1/ccsr_v2_repost"
 
@@ -36,8 +37,12 @@ class CCSRUpscalePipeline(BaseGenerationPipeline[PipelineConfig, SingleTask, dic
             scheduler=(model_repo, "scheduler"),
             sample_method="ddpm",
             mixed_precision="fp16",
-            tile_vae=True
+            tile_vae=False,
         )
+        # Enable native diffusers VAE tiling (runs entirely on GPU, lightning-fast)
+        self.upscaler.pipeline.vae.tile_sample_min_size = 2048
+        self.upscaler.pipeline.vae.enable_tiling()
+
         logger.info("CCSRUpscalePipeline setup complete.")
 
     def __call__(self, config: PipelineConfig, workload: SingleTask) -> dict:
