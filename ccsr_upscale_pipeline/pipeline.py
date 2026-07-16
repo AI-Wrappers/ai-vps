@@ -41,6 +41,7 @@ class CCSRUpscalePipeline(BaseGenerationPipeline[PipelineConfig, SingleTask, dic
         )
         # Enable native diffusers VAE tiling (runs entirely on GPU, lightning-fast)
         self.upscaler.pipeline.vae.tile_sample_min_size = 2048
+        self.upscaler.pipeline.vae.tile_latent_min_size = 256
         self.upscaler.pipeline.vae.enable_tiling()
 
         logger.info("CCSRUpscalePipeline setup complete.")
