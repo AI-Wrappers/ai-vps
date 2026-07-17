@@ -54,20 +54,21 @@ class AccelerateLoopManager(LoopManager):
         self.accelerator = accelerator
 
     def iterate(self, workload):
-        # Shard the pending tasks across all GPU processes
-        my_tasks = self.accelerator.split_between_processes(list(workload))
+        # Shard the pending tasks across all GPU processes using the context manager
+        with self.accelerator.split_between_processes(list(workload)) as my_tasks:
+            assigned_tasks = list(my_tasks)
         
         # Re-initialize/reset the GDriveDownloader for this process so it only fetches
         # files for tasks assigned to this specific process.
         downloader = GDriveDownloader()
         downloader.reset(downloader.gdrive, window_size=24)
-        downloader.set_tasks(my_tasks)
+        downloader.set_tasks(assigned_tasks)
         
         logging.info(
             f"Process {self.accelerator.process_index}/{self.accelerator.num_processes} "
-            f"assigned {len(my_tasks)} tasks out of {len(workload)} total pending tasks."
+            f"assigned {len(assigned_tasks)} tasks out of {len(workload)} total pending tasks."
         )
-        for task in my_tasks:
+        for task in assigned_tasks:
             yield task
 
 
