@@ -79,7 +79,7 @@ def main():
         )
         sys.exit(1)
 
-    accelerator = Accelerator()
+    accelerator = Accelerator(mixed_precision="fp16")
 
     flux_workload_path = sys.argv[1]
     src_dir = sys.argv[2]

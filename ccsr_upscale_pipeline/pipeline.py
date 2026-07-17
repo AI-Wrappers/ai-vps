@@ -33,13 +33,15 @@ class CCSRUpscalePipeline(BaseGenerationPipeline[PipelineConfig, SingleTask, dic
             if self.accelerator.is_main_process:
                 logger.info("Main process downloading/caching CCSR models...")
                 self._init_upscaler()
-            
+
             # Wait for the main process to finish downloading and cache population
             self.accelerator.wait_for_everyone()
 
             # Now all other processes can load models safely from cache
             if not self.accelerator.is_main_process:
-                logger.info(f"Process {self.accelerator.process_index} loading CCSR models from cache...")
+                logger.info(
+                    f"Process {self.accelerator.process_index} loading CCSR models from cache..."
+                )
                 self._init_upscaler()
         else:
             self._init_upscaler()
