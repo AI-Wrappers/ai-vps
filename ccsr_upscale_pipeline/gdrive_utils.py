@@ -39,59 +39,73 @@ def find_credentials_dir():
 
 
 class GDriveClient:
+    _lock = threading.Lock()
+
     def __init__(self, sa_creds_path=None, oauth_token_path=None):
-        creds_dir = find_credentials_dir()
-        
-        # 1. Initialize Read Service (Service Account)
-        sa_path = sa_creds_path or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") or os.path.join(creds_dir, "service_account.json")
-        if not os.path.exists(sa_path):
-            raise ValueError(
-                f"Service Account credentials file not found at {sa_path}. "
-                f"Please place your service_account.json file there."
-            )
-        try:
-            with open(sa_path, "r", encoding="utf-8") as f:
-                sa_info = json.load(f)
-        except Exception as e:
-            raise ValueError(f"Failed to read or parse Service Account credentials from {sa_path}: {e}")
+        with GDriveClient._lock:
+            creds_dir = find_credentials_dir()
             
-        self.sa_credentials = service_account.Credentials.from_service_account_info(
-            sa_info, scopes=["https://www.googleapis.com/auth/drive"]
-        )
-        self.read_service = build(
-            "drive", "v3", credentials=self.sa_credentials, cache_discovery=False
-        )
-
-        # 2. Initialize Write Service (OAuth User Token)
-        token_path = oauth_token_path or os.path.join(creds_dir, "token.json")
-        if not os.path.exists(token_path):
-            raise ValueError(
-                f"OAuth User Token file not found at {token_path}. "
-                f"Please run authenticate_local.py first to generate it."
-            )
-        try:
-            with open(token_path, "r", encoding="utf-8") as f:
-                token_info = json.load(f)
-        except Exception as e:
-            raise ValueError(f"Failed to read or parse OAuth User Token from {token_path}: {e}")
-
-        self.oauth_credentials = Credentials.from_authorized_user_info(
-            token_info, scopes=["https://www.googleapis.com/auth/drive.file"]
-        )
-
-        # Auto-refresh if expired
-        if self.oauth_credentials and self.oauth_credentials.expired and self.oauth_credentials.refresh_token:
+            # 1. Initialize Read Service (Service Account)
+            sa_path = sa_creds_path or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") or os.path.join(creds_dir, "service_account.json")
+            if not os.path.exists(sa_path):
+                raise ValueError(
+                    f"Service Account credentials file not found at {sa_path}. "
+                    f"Please place your service_account.json file there."
+                )
             try:
-                from google.auth.transport.requests import Request
-                self.oauth_credentials.refresh(Request())
-                with open(token_path, "w", encoding="utf-8") as f:
-                    f.write(self.oauth_credentials.to_json())
+                with open(sa_path, "r", encoding="utf-8") as f:
+                    sa_info = json.load(f)
             except Exception as e:
-                logger.warning(f"Failed to refresh OAuth credentials: {e}")
+                raise ValueError(f"Failed to read or parse Service Account credentials from {sa_path}: {e}")
+                
+            self.sa_credentials = service_account.Credentials.from_service_account_info(
+                sa_info, scopes=["https://www.googleapis.com/auth/drive"]
+            )
 
-        self.write_service = build(
-            "drive", "v3", credentials=self.oauth_credentials, cache_discovery=False
-        )
+            # 2. Initialize Write Service (OAuth User Token)
+            token_path = oauth_token_path or os.path.join(creds_dir, "token.json")
+            if not os.path.exists(token_path):
+                raise ValueError(
+                    f"OAuth User Token file not found at {token_path}. "
+                    f"Please run authenticate_local.py first to generate it."
+                )
+            try:
+                with open(token_path, "r", encoding="utf-8") as f:
+                    token_info = json.load(f)
+            except Exception as e:
+                raise ValueError(f"Failed to read or parse OAuth User Token from {token_path}: {e}")
+
+            self.oauth_credentials = Credentials.from_authorized_user_info(
+                token_info, scopes=["https://www.googleapis.com/auth/drive.file"]
+            )
+
+            # Auto-refresh if expired
+            if self.oauth_credentials and self.oauth_credentials.expired and self.oauth_credentials.refresh_token:
+                try:
+                    from google.auth.transport.requests import Request
+                    self.oauth_credentials.refresh(Request())
+                    with open(token_path, "w", encoding="utf-8") as f:
+                        f.write(self.oauth_credentials.to_json())
+                except Exception as e:
+                    logger.warning(f"Failed to refresh OAuth credentials: {e}")
+
+            self._thread_local = threading.local()
+
+    @property
+    def read_service(self):
+        if not hasattr(self._thread_local, "read_service"):
+            self._thread_local.read_service = build(
+                "drive", "v3", credentials=self.sa_credentials, cache_discovery=False
+            )
+        return self._thread_local.read_service
+
+    @property
+    def write_service(self):
+        if not hasattr(self._thread_local, "write_service"):
+            self._thread_local.write_service = build(
+                "drive", "v3", credentials=self.oauth_credentials, cache_discovery=False
+            )
+        return self._thread_local.write_service
 
     def extract_id(self, folder_str: str) -> str:
         if "id=" in folder_str:
@@ -223,7 +237,7 @@ class GDriveDownloader:
     def __init__(self, gdrive_client=None, window_size: int = 24, max_workers: int = 4):
         if getattr(self, "_initialized", False):
             return
-        self.gdrive = gdrive_client
+        self.gdrive = gdrive_client or GDriveClient()
         self.window_size = window_size
         self.executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="gdrive_downloader")
         self.tasks = []  # list of SingleTask
@@ -235,7 +249,7 @@ class GDriveDownloader:
 
     def reset(self, gdrive_client, window_size: int):
         with self.lock:
-            self.gdrive = gdrive_client
+            self.gdrive = gdrive_client or GDriveClient()
             self.window_size = window_size
             self.tasks = []
             self.futures = {}
@@ -274,8 +288,7 @@ class GDriveDownloader:
                 return
                 
             local_path.parent.mkdir(parents=True, exist_ok=True)
-            client = GDriveClient()
-            client.download_file(file_id, local_path)
+            self.gdrive.download_file(file_id, local_path)
             
             with self.lock:
                 self.downloaded_files.add(str(local_path))

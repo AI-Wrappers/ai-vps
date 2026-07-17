@@ -1,5 +1,6 @@
 import pytest
 import os
+from unittest.mock import patch, MagicMock
 import tempfile
 import json
 import torch
@@ -50,8 +51,18 @@ def test_bg_removal_processor(mock_directories):
     
     assert batches[0].items[0].relative_path.startswith("group1")
 
-def test_ccsr_upscale_processor(mock_directories):
+@patch('ccsr_upscale_pipeline.processor.GDriveClient')
+@patch('ccsr_upscale_pipeline.processor.GDriveDownloader')
+def test_ccsr_upscale_processor(mock_downloader_cls, mock_gdrive_cls, mock_directories):
     src, dst = mock_directories
+    
+    mock_gdrive = MagicMock()
+    mock_gdrive.list_files_recursively.return_value = [
+        {"id": "file_0", "name": "img_0.png", "rel_path": Path("group1/img_0.png"), "parent_id": "folder_1"},
+        {"id": "file_1", "name": "img_1.png", "rel_path": Path("group1/img_1.png"), "parent_id": "folder_1"},
+    ]
+    mock_gdrive_cls.return_value = mock_gdrive
+    
     processor = DirectoryPromptWorkloadProcessor(default_batch_size=2)
     
     flux_workload = {
@@ -59,7 +70,8 @@ def test_ccsr_upscale_processor(mock_directories):
             {
                 "group_name": "group1",
                 "prompts": [
-                    {"name": "img_0", "pos": "A red square"}
+                    {"name": "img_0", "pos": "A red square"},
+                    {"name": "img_1", "pos": ""}
                 ]
             }
         ]
@@ -75,11 +87,11 @@ def test_ccsr_upscale_processor(mock_directories):
     
     assert len(batches) == 2
     
-    img_0_item = next(item for item in batches[0].items if item.relative_path.endswith("img_0.png"))
-    assert img_0_item.prompt == "A red square"
+    img_0_task = next(t for t in batches if t.item.relative_path.endswith("img_0.png"))
+    assert img_0_task.item.prompt == "A red square"
     
-    img_1_item = next(item for item in batches[0].items if item.relative_path.endswith("img_1.png"))
-    assert img_1_item.prompt == ""
+    img_1_task = next(t for t in batches if t.item.relative_path.endswith("img_1.png"))
+    assert img_1_task.item.prompt == ""
 
 def test_guided_filter_pipeline_and_processor(tmp_path):
     masks_dir = tmp_path / "masks"
