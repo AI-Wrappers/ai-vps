@@ -2,46 +2,20 @@ import os
 import io
 import logging
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
 from ai_pipeline_toolbox.core.interfaces import BaseResultSaver
-from ccsr_upscale_pipeline.gdrive_utils import GDriveClient
 
 logger = logging.getLogger(__name__)
 
 class CcsrUpscaleResultSaver(BaseResultSaver):
-    def __init__(self, max_workers: int = 4):
-        self.gdrive = GDriveClient()
-        self.executor = ThreadPoolExecutor(max_workers=max_workers)
-
-    def _upload_and_cleanup(self, item, img_data, base_name: str) -> None:
-        try:
-            out_name = f"{base_name}_upscaled.png"
-            parent_id = item.parent_id
-            
-            if not parent_id:
-                logger.error(f"Cannot upload {out_name}, missing parent_id in item")
-                return
-                
-            img_byte_arr = io.BytesIO()
-            img_data.save(img_byte_arr, format='PNG')
-            img_byte_arr.seek(0)
-            
-            file_id = self.gdrive.upload_file(parent_id, out_name, img_byte_arr)
-            logger.info(f"Successfully uploaded {out_name} to Google Drive folder {parent_id} with ID: {file_id}")
-            
-        except Exception as e:
-            logger.error(f"Failed to upload {base_name}: {e}", exc_info=True)
-        finally:
-            input_path = Path(item.input_path)
-            if input_path.exists():
-                try:
-                    os.remove(input_path)
-                    logger.debug(f"Cleaned up temporary input file: {input_path}")
-                except Exception as e:
-                    logger.warning(f"Could not delete temporary input file {input_path}: {e}")
+    def __init__(self):
+        pass
 
     def save(self, result: dict, meta) -> None:
+        import json
+        from ccsr_upscale_pipeline.gdrive_utils import GDriveTransferManager
+        
         items = result.get("items", {})
+        dst_root = result.get("dst_root", "data/outputs_ccsr")
 
         for rel_path_str, data in items.items():
             rel_path = Path(rel_path_str)
@@ -54,4 +28,45 @@ class CcsrUpscaleResultSaver(BaseResultSaver):
                 logger.warning(f"Missing item or upscale_4k data for {rel_path_str}")
                 continue
 
-            self.executor.submit(self._upload_and_cleanup, item, upscale_img, base_name)
+            out_name = f"{base_name}_upscaled.png"
+            local_dir = Path(dst_root) / Path(item.relative_path).parent
+            local_dir.mkdir(parents=True, exist_ok=True)
+            
+            local_png_path = local_dir / out_name
+            local_json_path = local_dir / f"{base_name}_upscaled.json"
+
+            # Save PNG locally
+            try:
+                upscale_img.save(local_png_path, format='PNG')
+                logger.info(f"Successfully saved {out_name} locally to {local_png_path}")
+            except Exception as e:
+                logger.error(f"Failed to save upscaled PNG locally to {local_png_path}: {e}", exc_info=True)
+                continue
+
+            # Write JSON metadata
+            try:
+                metadata = {
+                    "parent_id": item.parent_id,
+                    "relative_path": item.relative_path
+                }
+                with open(local_json_path, "w", encoding="utf-8") as f:
+                    json.dump(metadata, f, indent=4, ensure_ascii=False)
+                logger.debug(f"Saved upload metadata to {local_json_path}")
+            except Exception as e:
+                logger.error(f"Failed to write metadata JSON to {local_json_path}: {e}", exc_info=True)
+                # If metadata fails, delete png so we don't have dangling file
+                local_png_path.unlink(missing_ok=True)
+                continue
+
+            # Clean up the temporary downloaded input file
+            input_path = Path(item.input_path)
+            if input_path.exists():
+                try:
+                    os.remove(input_path)
+                    logger.debug(f"Cleaned up temporary input file: {input_path}")
+                except Exception as e:
+                    logger.warning(f"Could not delete temporary input file {input_path}: {e}")
+
+            # Notify the transfer manager to start the upload backlog task immediately
+            transfer_manager = GDriveTransferManager(dst_root=dst_root)
+            transfer_manager.trigger_scan()

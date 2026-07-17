@@ -109,6 +109,10 @@ class DirectoryPromptWorkloadProcessor(BaseWorkloadProcessor):
             ))
 
         # Start the background downloader with a sliding window of 24
+        from ccsr_upscale_pipeline.gdrive_utils import GDriveTransferManager
+        transfer_manager = GDriveTransferManager(dst_root=dst)
+        transfer_manager.start(dst)
+
         downloader = GDriveDownloader(gdrive_client=self.gdrive, window_size=24)
         downloader.reset(self.gdrive, window_size=24)
         downloader.set_tasks(tasks)

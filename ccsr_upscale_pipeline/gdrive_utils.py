@@ -223,6 +223,144 @@ class GDriveClient:
                 break
 
 
+class GDriveTransferManager:
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls, *args, **kwargs):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super(GDriveTransferManager, cls).__new__(cls)
+                cls._instance._initialized = False
+            return cls._instance
+
+    def __init__(self, dst_root: str = None):
+        if getattr(self, "_initialized", False):
+            if dst_root and not self.dst_root:
+                self.dst_root = dst_root
+                self.trigger_scan()
+            return
+        self.gdrive = GDriveClient()
+        self.executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="gdrive_transfer")
+        self.active_paths = set()
+        self.active_paths_lock = threading.Lock()
+        self.dst_root = dst_root
+        self.wakeup_event = threading.Event()
+        self.backlog_running = False
+        self.backlog_thread = None
+        self.backlog_lock = threading.Lock()
+        self._initialized = True
+        
+        if dst_root:
+            self.start(dst_root)
+
+    def start(self, dst_root: str):
+        with self.backlog_lock:
+            self.dst_root = dst_root
+            if not self.backlog_running:
+                self.backlog_running = True
+                self.backlog_thread = threading.Thread(target=self._backlog_worker, daemon=True, name="gdrive_backlog_worker")
+                self.backlog_thread.start()
+                transfer_logger.info("GDriveTransferManager backlog worker started.")
+
+    def stop(self):
+        with self.backlog_lock:
+            self.backlog_running = False
+            self.wakeup_event.set()
+            if self.backlog_thread:
+                self.backlog_thread.join(timeout=2)
+                transfer_logger.info("GDriveTransferManager backlog worker stopped.")
+
+    def trigger_scan(self):
+        self.wakeup_event.set()
+
+    def submit_download(self, file_id: str, local_path: Path, task_id: str, on_success_callback=None):
+        return self.executor.submit(self._download_job, file_id, local_path, task_id, on_success_callback)
+
+    def submit_upload(self, png_path: Path, json_path: Path):
+        with self.active_paths_lock:
+            if str(png_path) in self.active_paths:
+                return None
+            self.active_paths.add(str(png_path))
+        return self.executor.submit(self._upload_job, png_path, json_path)
+
+    def _download_job(self, file_id: str, local_path: Path, task_id: str, on_success_callback=None):
+        try:
+            if local_path.exists() and local_path.stat().st_size > 0:
+                transfer_logger.info(f"File {local_path} already exists locally, skipping download (cached).")
+                if on_success_callback:
+                    on_success_callback(local_path)
+                return
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            self.gdrive.download_file(file_id, local_path)
+            if on_success_callback:
+                on_success_callback(local_path)
+            transfer_logger.info(f"Finished background download for task {task_id}: {local_path.name}")
+        except Exception as e:
+            transfer_logger.error(f"Failed background download for task {task_id}: {e}", exc_info=True)
+            raise
+
+    def _upload_job(self, png_path: Path, json_path: Path):
+        try:
+            if not png_path.exists() or not json_path.exists():
+                transfer_logger.warning(f"Upload job skipped, missing local file(s): {png_path} or {json_path}")
+                return
+            
+            with open(json_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            parent_id = meta.get("parent_id")
+            if not parent_id:
+                transfer_logger.error(f"Upload job skipped, missing parent_id in metadata: {json_path}")
+                json_path.unlink(missing_ok=True)
+                return
+
+            transfer_logger.info(f"Uploading file {png_path.name} to Google Drive folder {parent_id}")
+            
+            with open(png_path, "rb") as f:
+                img_byte_arr = io.BytesIO(f.read())
+            
+            file_id = self.gdrive.upload_file(parent_id, png_path.name, img_byte_arr)
+            transfer_logger.info(f"Successfully uploaded {png_path.name} to Google Drive folder {parent_id} with ID: {file_id}")
+            
+            # Delete local files on success
+            png_path.unlink(missing_ok=True)
+            json_path.unlink(missing_ok=True)
+        except Exception as e:
+            transfer_logger.error(f"Failed to upload backlog file {png_path.name}: {e}")
+        finally:
+            with self.active_paths_lock:
+                self.active_paths.discard(str(png_path))
+
+    def _backlog_worker(self):
+        import time
+        while self.backlog_running:
+            self.wakeup_event.clear()
+            if self.dst_root:
+                try:
+                    dst_path = Path(self.dst_root)
+                    if dst_path.exists():
+                        # Find all metadata files
+                        metadata_files = list(dst_path.rglob("*_upscaled.json"))
+                        backlog = []
+                        for json_path in metadata_files:
+                            png_path = json_path.with_name(json_path.name.replace(".json", ".png"))
+                            if png_path.exists():
+                                mtime = json_path.stat().st_mtime
+                                backlog.append((mtime, png_path, json_path))
+                        
+                        # Sort by mtime ascending (FIFO)
+                        backlog.sort(key=lambda x: x[0])
+                        
+                        for _, png_path, json_path in backlog:
+                            if not self.backlog_running:
+                                break
+                            self.submit_upload(png_path, json_path)
+                except Exception as e:
+                    transfer_logger.error(f"Error in backlog scan: {e}")
+            
+            self.wakeup_event.wait(timeout=15.0)
+
+
 class GDriveDownloader:
     _instance = None
     _lock = threading.Lock()
@@ -239,7 +377,6 @@ class GDriveDownloader:
             return
         self.gdrive = gdrive_client or GDriveClient()
         self.window_size = window_size
-        self.executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="gdrive_downloader")
         self.tasks = []  # list of SingleTask
         self.futures = {}  # task_id -> Future
         self.downloaded_files = set()  # paths that are successfully downloaded
@@ -275,27 +412,14 @@ class GDriveDownloader:
         local_path = Path(task.item.input_path)
         
         transfer_logger.info(f"Queueing background download for task {task_id}: {local_path.name}")
-        future = self.executor.submit(self._download_job, file_id, local_path, task_id)
-        self.futures[task_id] = future
-
-    def _download_job(self, file_id: str, local_path: Path, task_id: str):
-        try:
-            # Caching: check if file exists and is not empty
-            if local_path.exists() and local_path.stat().st_size > 0:
-                transfer_logger.info(f"File {local_path} already exists locally, skipping download (cached).")
-                with self.lock:
-                    self.downloaded_files.add(str(local_path))
-                return
-                
-            local_path.parent.mkdir(parents=True, exist_ok=True)
-            self.gdrive.download_file(file_id, local_path)
-            
+        
+        def success_cb(p):
             with self.lock:
-                self.downloaded_files.add(str(local_path))
-            transfer_logger.info(f"Finished background download for task {task_id}: {local_path.name}")
-        except Exception as e:
-            transfer_logger.error(f"Failed background download for task {task_id}: {e}", exc_info=True)
-            raise
+                self.downloaded_files.add(str(p))
+
+        manager = GDriveTransferManager()
+        future = manager.submit_download(file_id, local_path, task_id, on_success_callback=success_cb)
+        self.futures[task_id] = future
 
     def wait_for_task(self, task_id: str):
         future = None
