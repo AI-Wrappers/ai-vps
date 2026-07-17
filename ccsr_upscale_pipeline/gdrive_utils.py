@@ -38,6 +38,14 @@ def find_credentials_dir():
     return current_dir
 
 
+def log_retry(retry_state):
+    logger.warning(
+        f"Google API call failed (attempt {retry_state.attempt_number}). "
+        f"Retrying in {retry_state.next_action.sleep:.1f} seconds... "
+        f"Error: {retry_state.outcome.exception()}"
+    )
+
+
 class GDriveClient:
     _lock = threading.Lock()
 
@@ -115,7 +123,9 @@ class GDriveClient:
         return folder_str
 
     @retry(
-        wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(5)
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(15),
+        before_sleep=log_retry
     )
     def list_files_recursively(
         self, folder_id: str, current_path: Path = Path("")
@@ -159,7 +169,9 @@ class GDriveClient:
         return results
 
     @retry(
-        wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(5)
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(15),
+        before_sleep=log_retry
     )
     def download_file(self, file_id: str, local_path: Path) -> None:
         transfer_logger.info(f"Downloading Google Drive file {file_id} to {local_path}")
@@ -171,7 +183,9 @@ class GDriveClient:
                 status, done = downloader.next_chunk()
 
     @retry(
-        wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(5)
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(15),
+        before_sleep=log_retry
     )
     def upload_file(
         self,
@@ -191,7 +205,9 @@ class GDriveClient:
         return file.get("id")
 
     @retry(
-        wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(5)
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(15),
+        before_sleep=log_retry
     )
     def clean_folder(self, folder_id: str) -> None:
         folder_id = self.extract_id(folder_id)
