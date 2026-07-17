@@ -55,7 +55,7 @@ def determine_batch_size(vram_limit_pct: float) -> int:
     total_vram_gb = total_memory / (1024**3)
     allowed_vram_gb = total_vram_gb * vram_limit_pct
 
-    activation_per_item_gb = 0.15
+    activation_per_item_gb = 1.5
     batch_size = max(1, int(allowed_vram_gb / activation_per_item_gb))
     
     batch_size = min(batch_size, 32)
