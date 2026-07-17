@@ -141,3 +141,39 @@ def test_guided_filter_pipeline_and_processor(tmp_path):
     
     out_mask = output_item["mask_4096"]
     assert out_mask.size == (512, 512)
+
+
+def test_guided_filter_processor_upscaled_suffix(tmp_path):
+    masks_dir = tmp_path / "masks"
+    masks_dir.mkdir()
+    
+    images_dir = tmp_path / "images"
+    images_dir.mkdir()
+    
+    dst_dir = tmp_path / "dst"
+    dst_dir.mkdir()
+    
+    # Create mask with _mask_1024.png
+    mask_path = masks_dir / "item_abc_mask_1024.png"
+    Image.new("L", (128, 128), color=255).save(mask_path)
+    
+    # Create image with _upscaled.png
+    img_path = images_dir / "item_abc_upscaled.png"
+    Image.new("RGB", (512, 512), color="blue").save(img_path)
+    
+    processor = MaskPairWorkloadProcessor(default_batch_size=2)
+    workload = {
+        "src_masks": str(masks_dir),
+        "src_images": str(images_dir),
+        "dst": str(dst_dir)
+    }
+    
+    batches = list(processor.process(workload))
+    
+    assert len(batches) == 1
+    assert len(batches[0].items) == 1
+    
+    item = batches[0].items[0]
+    assert item.mask_1k_path == str(mask_path)
+    assert item.upscale_4k_path == str(img_path)
+    assert item.relative_path == "item_abc"

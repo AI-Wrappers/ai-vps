@@ -25,15 +25,21 @@ logging.basicConfig(
 )
 
 def main():
-    if len(sys.argv) < 4:
+    if len(sys.argv) < 3:
         logging.error(
-            "Usage: python -m guided_filter_pipeline.main <path_to_1k_masks> <path_to_4k_images> <path_to_dst_directory>"
+            "Usage: python -m guided_filter_pipeline.main <path_to_1k_masks> [path_to_4k_images] <path_to_dst_directory>\n"
+            "Or: python -m guided_filter_pipeline.main <path_to_in_directory> <path_to_out_directory>"
         )
         sys.exit(1)
 
-    src_masks = sys.argv[1]
-    src_images = sys.argv[2]
-    dst_dir = sys.argv[3]
+    if len(sys.argv) == 3:
+        src_masks = sys.argv[1]
+        src_images = sys.argv[1]
+        dst_dir = sys.argv[2]
+    else:
+        src_masks = sys.argv[1]
+        src_images = sys.argv[2]
+        dst_dir = sys.argv[3]
 
     if not os.path.exists(src_masks) or not os.path.exists(src_images):
         logging.error(f"Source directories not found.")
@@ -51,7 +57,7 @@ def main():
 
     runner = Runner(
         workload_processor=MaskPairWorkloadProcessor(default_batch_size=batch_size),
-        state_manager=SQLiteStateManager("data/guided_filter_state.db"),
+        state_manager=SQLiteStateManager("data/guided_filter_state_v2.db"),
         fetcher=ModelFetcher(
             "data/models_cache",
             tokens_for_provider={

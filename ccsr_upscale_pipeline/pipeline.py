@@ -18,12 +18,35 @@ logger = logging.getLogger(__name__)
 class CCSRUpscalePipeline(BaseGenerationPipeline[PipelineConfig, SingleTask, dict]):
     required_models = []
 
+    def __init__(self, accelerator=None):
+        super().__init__()
+        self.accelerator = accelerator
+
     def setup(self, models_paths: Dict[Union[Enum, str], str]) -> None:
         import ccsr
 
         ccsr.set_logger(logger)
         logger.info("Setting up CCSRUpscalePipeline using ccsr-pruned...")
 
+        if self.accelerator is not None:
+            # Let the main process download and cache the models first
+            if self.accelerator.is_main_process:
+                logger.info("Main process downloading/caching CCSR models...")
+                self._init_upscaler()
+            
+            # Wait for the main process to finish downloading and cache population
+            self.accelerator.wait_for_everyone()
+
+            # Now all other processes can load models safely from cache
+            if not self.accelerator.is_main_process:
+                logger.info(f"Process {self.accelerator.process_index} loading CCSR models from cache...")
+                self._init_upscaler()
+        else:
+            self._init_upscaler()
+
+        logger.info("CCSRUpscalePipeline setup complete.")
+
+    def _init_upscaler(self) -> None:
         # Load directly from HuggingFace repository using the wrapper's native from_pretrained() loader
         model_repo = "kharma1/ccsr_v2_repost"
 
@@ -38,13 +61,12 @@ class CCSRUpscalePipeline(BaseGenerationPipeline[PipelineConfig, SingleTask, dic
             sample_method="ddpm",
             mixed_precision="fp16",
             tile_vae=False,
+            accelerator=self.accelerator,
         )
         # Enable native diffusers VAE tiling (runs entirely on GPU, lightning-fast)
         self.upscaler.pipeline.vae.tile_sample_min_size = 2048
         self.upscaler.pipeline.vae.tile_latent_min_size = 256
         self.upscaler.pipeline.vae.enable_tiling()
-
-        logger.info("CCSRUpscalePipeline setup complete.")
 
     def __call__(self, config: PipelineConfig, workload: SingleTask) -> dict:
         logger.info(f"Executing CCSR upscale task: {workload.task_id}")
